@@ -31,7 +31,7 @@ class SignallMixin:
     ex_sys_id = 1
 
 
-class ActWorkerMixin:
+class ActWorkerMixin():
     table_name = 'records'
 
     def get_json(self, car_number: str, ex_id: int, gross: int, tare: int,

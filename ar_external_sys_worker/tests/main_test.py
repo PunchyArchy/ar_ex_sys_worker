@@ -20,9 +20,9 @@ class TestCase(unittest.TestCase):
 
 
     def testNewSignallActWorker(self):
-        inst = main.NewSignallActWorker(self.sql_shell,
+        inst = main.SignallActWorker(self.sql_shell,
                                         self.pol_login, self.pol_pass)
-        inst.send_data()
+        inst.send_unsend_acts()
 
     @unittest.SkipTest
     def testSignallActWorker(self):

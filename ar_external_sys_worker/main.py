@@ -22,15 +22,19 @@ class DataWorker(mixins.Logger, mixins.ExSys):
         data = self.get_send_data()
         return self.send_data(data)
 
+    def post_data(self, headers, link, data):
+        return requests.post(url=link,
+                      data=data,
+                      headers=headers)
+
     def send_data(self, data):
         data_frmt = self.format_send_data(data)
         local_data_id = self.get_local_id(data)
         log_id = self.log_ex_sys_sent(local_data_id)
         headers = self.get_headers()
-        print(data_frmt)
-        act_send_response = requests.post(url=self.working_link,
-                                          data=data_frmt,
-                                          headers=headers)
+        act_send_response = self.post_data(headers=headers,
+                                           link=self.working_link,
+                                           data=data_frmt)
         ex_sys_data_id = self.get_ex_sys_id_from_response(act_send_response)
         self.log_ex_sys_get(ex_sys_data_id, log_id)
         return True
@@ -71,8 +75,10 @@ class SignallActWorker(mixins.SignallMixin, DataWorker, mixins.ActWorkerMixin,
         act_json = self.get_json(car_number=act['car_number'],
                                  ex_id=act['ex_id'], gross=act['gross'],
                                  tare=act['tare'], cargo=act['cargo'],
-                                 time_in=act['time_in'].strftime('%Y-%m-%d %H:%M:%S'),
-                                 time_out=act['time_out'].strftime('%Y-%m-%d %H:%M:%S'),
+                                 time_in=act['time_in'].strftime(
+                                     '%Y-%m-%d %H:%M:%S'),
+                                 time_out=act['time_out'].strftime(
+                                     '%Y-%m-%d %H:%M:%S'),
                                  alerts=act['alerts'], carrier=act['carrier'],
                                  trash_cat=act['trash_cat'],
                                  trash_type=act['trash_type'],
@@ -97,14 +103,13 @@ class SignallActWorker(mixins.SignallMixin, DataWorker, mixins.ActWorkerMixin,
         return headers
 
     def get_send_data(self):
-        return self.get_unsend_acts()
+        return self.get_one_unsend_act()
 
     def get_ex_sys_id_from_response(self, response):
         response = response.json()
         return response['act_id']
 
     def send_unsend_acts(self):
-        data = self.get_send_data()
+        data = self.get_unsend_acts()
         for act in data:
             self.send_data(act)
-
