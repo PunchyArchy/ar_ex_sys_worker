@@ -1,0 +1,3 @@
+include imgs/*.png
+include gravity_interface/imgs/*.png
+global-include *.png
