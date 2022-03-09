@@ -1,0 +1,2 @@
+requests
+wsqluse==1.82
