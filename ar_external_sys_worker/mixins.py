@@ -77,7 +77,30 @@ class AuthMe(UrlsWorkerMixin):
         return token
 
 
+class SignallActsGetter:
+    get_acts_url = '/v1/acts/get_acts'
+
+    def get_acts_command(self, start_date: str, end_date: str,
+                         polygon_name: str, page: int = 1):
+        return {
+            "car_number": "",
+            "current_page": page,
+            "date_start": start_date,
+            "date_stop": end_date,
+            "platform_name": polygon_name,
+            "sorting_by": "",
+            "transporter_name": "",
+            "waste_category": 'tko'
+
+        }
+
+
 class SignAllAuthMe(AuthMe):
+
+    def get_headers(self):
+        token = self.get_token()
+        headers = {'Authorization': token}
+        return headers
 
     def extract_token(self, auth_result_json):
         token = auth_result_json.json()['token']
@@ -121,8 +144,9 @@ class SignallPhotoEncoderMixin(PhotoEncoderMixin):
         if not photo_path:
             return
         photo = super().get_photo_data(photo_path)
-        data = photo.decode()
-        return data
+        if photo:
+            data = photo.decode()
+            return data
 
 
 class DataBaseWorker:
@@ -197,6 +221,17 @@ class ActsSQLCommands:
         return self.get_acts_all_command() + " and time_in::date='{}'".format(
             today)
 
+    def get_wdb_tonnage(self, where_clause):
+        command = "select count(r.id), sum(cargo) from records r " \
+                  "LEFT JOIN trash_cats tc ON (r.trash_cat=tc.id) " \
+                  "where {}".format(where_clause)
+        return self.sql_shell.get_table_dict(command)
+
+    def get_acts_period(self, start_date, end_date, smth_else):
+        command =  self.get_acts_all_command() + " and time_in > '{}' and time_out < '{}' {}".format(
+            start_date, end_date, smth_else)
+        return self.sql_shell.get_table_dict(command)
+
     @wsqluse.wsqluse.getTableDictStripper
     def get_unsend_acts(self):
         command = self.get_acts_all_command() + \
@@ -209,11 +244,32 @@ class ActsSQLCommands:
     def get_one_unsend_act(self):
         try:
             return self.get_unsend_acts()[0]
-        except: pass
+        except:
+            pass
 
     def get_filters_ready(self):
         filter_ready = ' and '.format(self.filters)
         return filter_ready
+
+
+class ActsSQLCommandsNew(ActsSQLCommands):
+    def get_acts_all_command(self):
+        command = "SELECT r.id as ex_id, auto.car_number, r.brutto as gross, " \
+                  "r.tara as tare, r.cargo, r.time_in, r.time_out, " \
+                  "clients.inn as carrier, tc.cat_name as trash_cat, " \
+                  "tt.name as trash_type, oc.gross as gross_comm," \
+                  "oc.tare as tare_comm, oc.additional as add_comm, " \
+                  "oc.changing as changing_comm, oc.closing as closing_comm, " \
+                  "dro.owner as polygon_id " \
+                  "FROM records r " \
+                  "INNER JOIN clients ON (r.carrier=clients.id) " \
+                  "INNER JOIN trash_cats tc ON (r.trash_cat=tc.id) " \
+                  "INNER JOIN trash_types tt ON (r.trash_type=tt.id) " \
+                  "LEFT JOIN operator_comments oc ON (r.id=oc.record_id) " \
+                  "LEFT JOIN duo_records_owning  dro ON (r.id = dro.record)" \
+                  "LEFT JOIN auto ON (r.auto = auto.id)" \
+                  "WHERE not time_out is null "
+        return command
 
 
 class DuoAcstSQLCommands(ActsSQLCommands):

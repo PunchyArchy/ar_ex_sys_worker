@@ -18,7 +18,7 @@ class TestCase(unittest.TestCase):
                                  sql_shell=sql_shell)
 
 
-
+    @unittest.SkipTest
     def testNewSignallActWorker(self):
         inst = main.SignallActWorker(self.sql_shell,
                                         self.pol_login, self.pol_pass)
@@ -54,6 +54,12 @@ class TestCase(unittest.TestCase):
     def test_photo_mark(self):
         resp = self.inst.get_photo_path(197924, 1)
 
+
+    def test_SignallActChecker(self):
+        ins = main.SignallActChecker(self.sql_shell, "1", "071298")
+        ins.work('2022-03-01', '2022-04-01', 'ООО «Мохит-СТР»')
+
+        print("RES", ins)
 
 if __name__ == '__main__':
     unittest.main()
