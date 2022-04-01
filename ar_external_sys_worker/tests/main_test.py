@@ -54,12 +54,19 @@ class TestCase(unittest.TestCase):
     def test_photo_mark(self):
         resp = self.inst.get_photo_path(197924, 1)
 
-
+    @unittest.SkipTest
     def test_SignallActChecker(self):
         ins = main.SignallActChecker(self.sql_shell, "1", "071298")
         ins.work('2022-03-01', '2022-04-01', 'ООО «Мохит-СТР»')
 
-        print("RES", ins)
+    def test_SignallActDel(self):
+        with open('no_photo_records.txt', 'r') as fobj:
+            #lines = fobj.readlines()
+            lines = ['203971', '203972']
+            for line in lines:
+                line = line.replace('\n', '')
+                inst = main.SignallActReuploder(self.sql_shell, "1", "071298")
+                inst.work(line)
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,2 +1,2 @@
 requests
-wsqluse==1.82
+wsqluse==1.85

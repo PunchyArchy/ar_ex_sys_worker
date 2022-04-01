@@ -3,7 +3,7 @@ from os.path import join, dirname
 
 setup(
     name='ar_ex_sys_worker',
-    version='0.0.7',
+    version='0.1.2',
     packages=find_packages(),
     author='PunchyArchy',
     author_email='ksmdrmvscthny@gmail.com',

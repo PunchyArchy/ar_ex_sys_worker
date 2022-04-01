@@ -95,6 +95,24 @@ class SignallActsGetter:
         }
 
 
+class SignallActDeletter:
+    del_act_url = '/v1/acts/delete_act_by_number/{}'
+    headers = None
+    working_link = None
+
+    def delete_act(self, act_number):
+        return requests.delete(self.working_link.format(act_number),
+                               headers=self.headers)
+
+class SignallActDBDeletter:
+    sql_shell = None
+
+    def delete_act_from_send_reports(self, act_id):
+        command = "DELETE FROM ex_sys_data_send_reports WHERE local_id={}"
+        command = command.format(act_id)
+        print(command)
+        return self.sql_shell.try_execute(command)
+
 class SignAllAuthMe(AuthMe):
 
     def get_headers(self):
@@ -200,19 +218,21 @@ class ActsSQLCommands:
         self.limit = limit
 
     def get_acts_all_command(self):
-        command = "SELECT r.id as ex_id, r.car_number, r.brutto as gross, " \
-                  "r.tara as tare, r.cargo, r.time_in, r.time_out, r.alerts, " \
-                  "clients.inn as carrier, tc.cat_name as trash_cat, " \
+        command = "SELECT r.id as ex_id, a.car_number, r.brutto as gross, " \
+                  "r.tara as tare, r.cargo, r.time_in, r.time_out, " \
+                  "cji.inn as carrier, tc.name as trash_cat, " \
                   "tt.name as trash_type, oc.gross as gross_comm," \
                   "oc.tare as tare_comm, oc.additional as add_comm, " \
-                  "oc.changing as changing_comm, oc.closing as closing_comm, " \
+                  "oc.changing as changing_comm, oc.closing as closing_comm," \
                   "dro.owner as polygon_id " \
                   "FROM records r " \
                   "INNER JOIN clients ON (r.carrier=clients.id) " \
                   "INNER JOIN trash_cats tc ON (r.trash_cat=tc.id) " \
                   "INNER JOIN trash_types tt ON (r.trash_type=tt.id) " \
                   "LEFT JOIN operator_comments oc ON (r.id=oc.record_id) " \
-                  "LEFT JOIN duo_records_owning  dro ON (r.id = dro.record)" \
+                  "LEFT JOIN auto a ON (a.id=r.auto) " \
+                  "LEFT JOIN clients_juridical_info cji ON (cji.client_id=clients.id) " \
+                  "LEFT JOIN duo_records_owning dro on r.id = dro.record " \
                   "WHERE not time_out is null "
         return command
 
@@ -228,7 +248,7 @@ class ActsSQLCommands:
         return self.sql_shell.get_table_dict(command)
 
     def get_acts_period(self, start_date, end_date, smth_else):
-        command =  self.get_acts_all_command() + " and time_in > '{}' and time_out < '{}' {}".format(
+        command = self.get_acts_all_command() + " and time_in > '{}' and time_out < '{}' {}".format(
             start_date, end_date, smth_else)
         return self.sql_shell.get_table_dict(command)
 
@@ -237,7 +257,7 @@ class ActsSQLCommands:
         command = self.get_acts_all_command() + \
                   "  and r.id NOT IN (SELECT local_id FROM " \
                   "ex_sys_data_send_reports WHERE table_id={} and not get is null) " \
-                  "and tc.cat_name='ТКО' and time_in::date>'2022.02.21' LIMIT {} ".format(
+                  "and tc.name='ТКО' and time_in::date>'2022.02.21' LIMIT {} ".format(
                       self.table_id, self.limit)
         return self.sql_shell.get_table_dict(command)
 
@@ -256,7 +276,7 @@ class ActsSQLCommandsNew(ActsSQLCommands):
     def get_acts_all_command(self):
         command = "SELECT r.id as ex_id, auto.car_number, r.brutto as gross, " \
                   "r.tara as tare, r.cargo, r.time_in, r.time_out, " \
-                  "clients.inn as carrier, tc.cat_name as trash_cat, " \
+                  "clients.inn as carrier, tc.name as trash_cat, " \
                   "tt.name as trash_type, oc.gross as gross_comm," \
                   "oc.tare as tare_comm, oc.additional as add_comm, " \
                   "oc.changing as changing_comm, oc.closing as closing_comm, " \
@@ -280,7 +300,7 @@ class DuoAcstSQLCommands(ActsSQLCommands):
         return self.get_acts_all_command() + \
                "  and r.id NOT IN (SELECT local_id FROM " \
                "ex_sys_data_send_reports WHERE table_id={} and not get is null) " \
-               "and tc.cat_name='ТКО' and time_in::date>'2022.02.21' " \
+               "and tc.name='ТКО' and time_in::date>'2022.02.21' " \
                "and dro.owner={} LIMIT {} ".format(self.table_id,
                                                    self.limit,
                                                    self.polygon_id)

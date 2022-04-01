@@ -34,6 +34,7 @@ class DataWorker(mixins.Logger, mixins.ExSys):
         act_send_response = self.post_data(headers=headers,
                                            link=self.working_link,
                                            data=data_frmt)
+        print(local_data_id, act_send_response.json())
         ex_sys_data_id = self.get_ex_sys_id_from_response(act_send_response)
         self.log_ex_sys_get(ex_sys_data_id, log_id)
         return True
@@ -49,6 +50,8 @@ class SignallActWorker(mixins.SignallMixin, DataWorker, mixins.ActWorkerMixin,
         self.login = login
         self.password = password
         self.sql_shell = sql_shell
+        self.table_name = 'records'
+        self.table_id = 1
         self.working_link = self.get_full_endpoint(self.link_create_act)
 
     def get_local_id(self, data):
@@ -56,8 +59,6 @@ class SignallActWorker(mixins.SignallMixin, DataWorker, mixins.ActWorkerMixin,
 
     def format_send_data(self, act, photo_in=None, photo_out=None):
         act.pop('polygon_id')
-        if act['alerts']:
-            act['alerts'] = act.pop('alerts').split('|')
         act['operator_comments'] = {'gross_comm': act.pop('gross_comm'),
                                     'tare_comm': act.pop('tare_comm'),
                                     'add_comm': act.pop('add_comm'),
@@ -67,10 +68,10 @@ class SignallActWorker(mixins.SignallMixin, DataWorker, mixins.ActWorkerMixin,
                                         'closing_comm')}
         act['photo_in'] = self.get_photo_path(act['ex_id'], 1)
         act['photo_out'] = self.get_photo_path(act['ex_id'], 2)
-        if photo_in:
-            photo_in = self.get_photo_data(photo_in)
-        if photo_out:
-            photo_out = self.get_photo_data(photo_out)
+        if act['photo_in']:
+            photo_in = self.get_photo_data(act['photo_in'])
+        if act['photo_out']:
+            photo_out = self.get_photo_data(act['photo_out'])
         act_json = self.get_json(car_number=act['car_number'],
                                  ex_id=act['ex_id'], gross=act['gross'],
                                  tare=act['tare'], cargo=act['cargo'],
@@ -78,7 +79,7 @@ class SignallActWorker(mixins.SignallMixin, DataWorker, mixins.ActWorkerMixin,
                                      '%Y-%m-%d %H:%M:%S'),
                                  time_out=act['time_out'].strftime(
                                      '%Y-%m-%d %H:%M:%S'),
-                                 alerts=act['alerts'], carrier=act['carrier'],
+                                 alerts=None, carrier=act['carrier'],
                                  trash_cat=act['trash_cat'],
                                  trash_type=act['trash_type'],
                                  operator_comments=act['operator_comments'],
@@ -135,12 +136,12 @@ class SignallActChecker(mixins.SignallMixin, DataWorker,
         signal_acts += act_send_response['acts']
         pages = act_send_response['pages']
         signal_acts_amount_weight = act_send_response['weight']
-        wdb_acts_info = self.get_wdb_tonnage(" time_in > '{}' and time_in < '{}' and tc.cat_name='ТКО' ".format(start_date,end_date))
+        wdb_acts_info = self.get_wdb_tonnage(" time_in > '{}' and time_in < '{}' and tc.name='ТКО' ".format(start_date,end_date))
         print(wdb_acts_info)
         print('\nОбщее количестов актов с Signall:', signal_acts_amount_weight)
         print("Общее количество актов с WDB:", wdb_acts_info['info'][0]['count'])
         print('Общий тоннаж акттов с SignAll:', act_send_response['tonnage'])
-        print("\nТоннаж с WDB:", wdb_acts_info['info'][0]['sum'])
+        print("Тоннаж с WDB:", wdb_acts_info['info'][0]['sum'], '\n')
         count = 2
         while count <= pages:
             print(f'Собираем список {count} из {pages}')
@@ -158,7 +159,7 @@ class SignallActChecker(mixins.SignallMixin, DataWorker,
         if 'error' in act_send_response:
             print("FAILED:", act_send_response)
             return
-        my_acts = self.get_acts_period(start_date, end_date, " and tc.cat_name='ТКО' and time_out is not null")
+        my_acts = self.get_acts_period(start_date, end_date, " and tc.name='ТКО' and time_out is not null")
         if my_acts['status'] == 'success':
             my_acts_ids = [int(act['ex_id']) for act in my_acts['info']]
             my_acts_ids.sort()
@@ -182,4 +183,24 @@ class SignallActChecker(mixins.SignallMixin, DataWorker,
                 except KeyError:
                     anomalys[number] = 'На SignAll нет акта'
             print('Аномалии по весам', anomalys)
+
+
+
+class SignallActReuploder(mixins.SignallMixin, DataWorker,
+                        mixins.SignAllAuthMe,
+                        mixins.SignallActDeletter, mixins.SignallActDBDeletter):
+    def __init__(self, sql_shell, login, password):
+        self.login = login
+        self.password = password
+        self.sql_shell = sql_shell
+        self.headers = self.get_headers()
+        self.working_link = self.get_full_endpoint(self.del_act_url)
+
+
+    def work(self, act_number):
+        print(f"DEL ACT #{act_number}")
+        response = self.delete_act(act_number)
+        print(f"SIGNALL RESULT:{response.json()}")
+        response = self.delete_act_from_send_reports(act_number)
+        print(f"DB RESULT:{response}")
 
