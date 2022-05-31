@@ -16,7 +16,14 @@ class TestCase(unittest.TestCase):
     inst = main.SignallActWorker(login=pol_login,
                                  password=pol_pass,
                                  sql_shell=sql_shell)
-
+    @unittest.SkipTest
+    def test_some(self):
+        list_name = ['1', '2']
+        command = "SELECT * FROM records WHERE trash_cat IN {} and time_in > '06.05.2022'"
+        command = command.format(tuple(list_name))
+        print(command)
+        res = self.sql_shell.try_execute_get(command)
+        print(res)
 
     @unittest.SkipTest
     def testNewSignallActWorker(self):
@@ -54,14 +61,22 @@ class TestCase(unittest.TestCase):
     def test_photo_mark(self):
         resp = self.inst.get_photo_path(197924, 1)
 
-    @unittest.SkipTest
     def test_SignallActChecker(self):
         ins = main.SignallActChecker(self.sql_shell, "1", "071298")
-        ins.work('2022-03-01', '2022-04-01', 'ООО «Мохит-СТР»')
+        ins.work('2022-05-01', '2022-05-30', 'ООО «Мохит-СТР»')
 
+    @unittest.SkipTest
+    def test_SignallActCheckerTLB(self):
+        sql_shell = wsqluse.wsqluse.Wsqluse(dbname='wdb',
+                                            user='qodex',
+                                            password='en23',
+                                            host='127.0.0.1')
+        ins = main.SignallActCheckerOldWDB(self.sql_shell, "1", "071298")
+        ins.work('2022-03-01', '2022-03-31', 'ООО «Грин Сити»')
+
+    @unittest.SkipTest
     def test_SignallActDel(self):
         with open('no_photo_records.txt', 'r') as fobj:
-            #lines = fobj.readlines()
             lines = ['203971', '203972']
             for line in lines:
                 line = line.replace('\n', '')

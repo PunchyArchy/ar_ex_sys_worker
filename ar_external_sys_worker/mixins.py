@@ -11,8 +11,12 @@ class UrlsWorkerMixin:
     link_host = None
     port = None
 
-    def get_full_endpoint(self, link):
-        return "".join((self.link_host, ':' + self.port, link))
+    def get_full_endpoint(self, link, host=None, port=None):
+        if not host:
+            host = self.link_host
+        if not port:
+            port = self.port
+        return "".join((str(host), ':' + str(port), str(link)))
 
 
 class ExSys:
@@ -104,6 +108,7 @@ class SignallActDeletter:
         return requests.delete(self.working_link.format(act_number),
                                headers=self.headers)
 
+
 class SignallActDBDeletter:
     sql_shell = None
 
@@ -112,6 +117,7 @@ class SignallActDBDeletter:
         command = command.format(act_id)
         print(command)
         return self.sql_shell.try_execute(command)
+
 
 class SignAllAuthMe(AuthMe):
 
@@ -210,6 +216,8 @@ class ActsSQLCommands:
     sql_shell = None
     table_id = 9
     table_name = 'records'
+    trash_cats_to_send = []
+    time_start = None
 
     def set_filters(self, *filters):
         self.filters.append(filters)
@@ -248,7 +256,7 @@ class ActsSQLCommands:
         return self.sql_shell.get_table_dict(command)
 
     def get_acts_period(self, start_date, end_date, smth_else):
-        command = self.get_acts_all_command() + " and time_in > '{}' and time_out < '{}' {}".format(
+        command = self.get_acts_all_command() + " and time_in > '{}' and time_out::date <= '{}' {}".format(
             start_date, end_date, smth_else)
         return self.sql_shell.get_table_dict(command)
 
@@ -257,8 +265,9 @@ class ActsSQLCommands:
         command = self.get_acts_all_command() + \
                   "  and r.id NOT IN (SELECT local_id FROM " \
                   "ex_sys_data_send_reports WHERE table_id={} and not get is null) " \
-                  "and tc.name='ТКО' and time_in::date>'2022.02.21' LIMIT {} ".format(
-                      self.table_id, self.limit)
+                  "and tc.name in {} and time_in::date>'{}' LIMIT {} ".format(
+                      self.table_id, tuple(self.trash_cats_to_send),
+                      self.time_start, self.limit)
         return self.sql_shell.get_table_dict(command)
 
     def get_one_unsend_act(self):
@@ -270,26 +279,6 @@ class ActsSQLCommands:
     def get_filters_ready(self):
         filter_ready = ' and '.format(self.filters)
         return filter_ready
-
-
-class ActsSQLCommandsNew(ActsSQLCommands):
-    def get_acts_all_command(self):
-        command = "SELECT r.id as ex_id, auto.car_number, r.brutto as gross, " \
-                  "r.tara as tare, r.cargo, r.time_in, r.time_out, " \
-                  "clients.inn as carrier, tc.name as trash_cat, " \
-                  "tt.name as trash_type, oc.gross as gross_comm," \
-                  "oc.tare as tare_comm, oc.additional as add_comm, " \
-                  "oc.changing as changing_comm, oc.closing as closing_comm, " \
-                  "dro.owner as polygon_id " \
-                  "FROM records r " \
-                  "INNER JOIN clients ON (r.carrier=clients.id) " \
-                  "INNER JOIN trash_cats tc ON (r.trash_cat=tc.id) " \
-                  "INNER JOIN trash_types tt ON (r.trash_type=tt.id) " \
-                  "LEFT JOIN operator_comments oc ON (r.id=oc.record_id) " \
-                  "LEFT JOIN duo_records_owning  dro ON (r.id = dro.record)" \
-                  "LEFT JOIN auto ON (r.auto = auto.id)" \
-                  "WHERE not time_out is null "
-        return command
 
 
 class DuoAcstSQLCommands(ActsSQLCommands):
@@ -343,3 +332,23 @@ class SignallAuth(SignallMixin, SignallAuthWorker):
         self.set_sqlshell(sql_shell)
         self.set_polygon_id(polygon_id)
         super().__init__()
+
+
+class DbAuthInfoGetter:
+    sql_shell = None
+
+    @wsqluse.wsqluse.tryExecuteGetStripper
+    def get_login_from_db(self):
+        command = "SELECT value FROM core_settings where key='signall_login'"
+        return self.sql_shell.try_execute_get(command)
+
+    @wsqluse.wsqluse.tryExecuteGetStripper
+    def get_pass_from_db(self):
+        command = "SELECT value FROM core_settings where key='signall_pass'"
+        return self.sql_shell.try_execute_get(command)
+
+    def get_auth_info_from_db(self):
+        dictname = {}
+        dictname['signall_login'] = self.get_login_from_db()
+        dictname['signall_pass'] = self.get_pass_from_db()
+        return dictname

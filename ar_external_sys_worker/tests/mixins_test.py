@@ -10,7 +10,6 @@ class TestCase(unittest.TestCase):
                         password=os.environ.get('DB_PASS'),
                         host=os.environ.get('DB_HOST'))
 
-    @unittest.SkipTest
     def testSignallAuthMe(self):
         login = '1@signal.com'
         password = 'd4GExhec'
