@@ -13,22 +13,21 @@ class TestCase(unittest.TestCase):
                                         host=os.environ.get('DB_HOST'))
     pol_login = os.environ.get('POL_LOGIN')
     pol_pass = os.environ.get('POL_PASS')
-    inst = main.SignallActWorker(login=pol_login,
-                                 password=pol_pass,
-                                 sql_shell=sql_shell)
+    #inst = main.SignallActWorker(login=pol_login,
+    #                             password=pol_pass,
+    #                             sql_shell=sql_shell)
+
     @unittest.SkipTest
     def test_some(self):
         list_name = ['1', '2']
         command = "SELECT * FROM records WHERE trash_cat IN {} and time_in > '06.05.2022'"
         command = command.format(tuple(list_name))
-        print(command)
         res = self.sql_shell.try_execute_get(command)
-        print(res)
 
     @unittest.SkipTest
     def testNewSignallActWorker(self):
         inst = main.SignallActWorker(self.sql_shell,
-                                        self.pol_login, self.pol_pass)
+                                     self.pol_login, self.pol_pass)
         inst.send_unsend_acts()
 
     @unittest.SkipTest
@@ -61,6 +60,7 @@ class TestCase(unittest.TestCase):
     def test_photo_mark(self):
         resp = self.inst.get_photo_path(197924, 1)
 
+    @unittest.SkipTest
     def test_SignallActChecker(self):
         ins = main.SignallActChecker(self.sql_shell, "1", "071298")
         ins.work('2022-05-01', '2022-05-30', 'ООО «Мохит-СТР»')
@@ -82,6 +82,13 @@ class TestCase(unittest.TestCase):
                 line = line.replace('\n', '')
                 inst = main.SignallActReuploder(self.sql_shell, "1", "071298")
                 inst.work(line)
+
+    def test_asu_main(self):
+        inst = main.ASUActsWorker(sql_shell=self.sql_shell,
+                                  trash_cats_list=['ТКО'],
+                                  time_start='2022.04.07')
+        inst.send_unsend_acts()
+
 
 if __name__ == '__main__':
     unittest.main()

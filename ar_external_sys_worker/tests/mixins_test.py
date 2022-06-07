@@ -34,7 +34,6 @@ class TestCase(unittest.TestCase):
         inst.polygon_id = 1
         inst.table_id = 1
         command = inst.get_unsend_command()
-        print(command)
         acts = self.sql_shell.try_execute_get(command)
         print("ACTS", acts)
 

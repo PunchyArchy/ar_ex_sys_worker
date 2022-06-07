@@ -3,7 +3,7 @@ from os.path import join, dirname
 
 setup(
     name='ar_ex_sys_worker',
-    version='0.2.5',
+    version='0.2.6',
     packages=find_packages(),
     author='PunchyArchy',
     author_email='ksmdrmvscthny@gmail.com',
@@ -11,6 +11,8 @@ setup(
     include_package_data=True,
     install_requires=[
         'requests',
-        'wsqluse==1.85'
+        'wsqluse==1.85',
+        'pytz',
+        'tzlocal'
     ],
 )
