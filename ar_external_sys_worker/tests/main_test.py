@@ -13,7 +13,8 @@ class TestCase(unittest.TestCase):
                                         host=os.environ.get('DB_HOST'))
     pol_login = os.environ.get('POL_LOGIN')
     pol_pass = os.environ.get('POL_PASS')
-    #inst = main.SignallActWorker(login=pol_login,
+
+    # inst = main.SignallActWorker(login=pol_login,
     #                             password=pol_pass,
     #                             sql_shell=sql_shell)
 
@@ -87,7 +88,13 @@ class TestCase(unittest.TestCase):
         inst = main.ASUActsWorker(sql_shell=self.sql_shell,
                                   trash_cats_list=['ТКО'],
                                   time_start='2022.04.07')
-        inst.send_unsend_acts()
+        print(inst.send_unsend_acts())
+
+    def test_signall_main(self):
+        inst = main.SignallActWorker(sql_shell=self.sql_shell,
+                                     trash_cats_list=['ТКО'],
+                                     time_start='2022.04.07')
+        print(inst.send_unsend_acts())
 
 
 if __name__ == '__main__':

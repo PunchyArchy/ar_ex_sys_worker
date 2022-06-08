@@ -1,4 +1,3 @@
-import datetime
 import tzlocal
 from pytz import timezone
 import json
@@ -7,7 +6,8 @@ import requests
 from ar_external_sys_worker import mixins
 
 
-class DataWorker(mixins.Logger, mixins.ExSys):
+class DataWorker(mixins.Logger, mixins.ExSys, mixins.AuthMe,
+                 mixins.DbAuthInfoGetter):
     working_link = None
 
     def get_send_data(self):
@@ -31,9 +31,6 @@ class DataWorker(mixins.Logger, mixins.ExSys):
     def get_data(self, headers, link, data):
         return requests.get(url=link, data=data, headers=headers)
 
-    def get_headers(self):
-        pass
-
     def send_data(self, data):
         local_data_id = self.get_local_id(data)
         data_frmt = self.format_send_data(data)
@@ -41,7 +38,6 @@ class DataWorker(mixins.Logger, mixins.ExSys):
         act_send_response = self.post_data(headers=self.headers,
                                            link=self.working_link,
                                            data=data_frmt)
-        print(act_send_response.json())
         ex_sys_data_id = self.get_ex_sys_id_from_response(act_send_response)
         self.log_ex_sys_get(ex_sys_data_id, log_id)
         return act_send_response
@@ -62,6 +58,8 @@ class ActsWorker(DataWorker, mixins.ActWorkerMixin, mixins.ActsSQLCommands):
             trash_cats = ['ТКО', 'ПО']
         self.trash_cats_to_send = trash_cats
         self.time_start = time_start
+        self.login, self.password = self.get_auth_info_from_db()
+        self.set_headers(self.get_headers())
 
     def send_unsend_acts(self):
         data = self.get_unsend_acts()
@@ -88,20 +86,15 @@ class ActsWorker(DataWorker, mixins.ActWorkerMixin, mixins.ActsSQLCommands):
         return self.get_one_unsend_act()
 
 
-class ASUActsWorker(mixins.AsuMixin,
-                    mixins.ASUAuthMe, ActsWorker,
-                    mixins.SignallPhotoEncoderMixin,
-                    mixins.ASUDBAPIAuthInfoGetter):
+class ASUActsWorker(mixins.AsuMixin, ActsWorker,
+                    mixins.SignallPhotoEncoderMixin):
     def __init__(self, sql_shell, trash_cats_list, time_start):
         super().__init__(sql_shell=sql_shell, trash_cats=trash_cats_list,
                          time_start=time_start)
-        self.login, self.password = self.get_auth_info_from_db()
         self.working_link = self.get_full_endpoint(self.link_create_act)
         self.fetch_asu_auto_id_url = self.get_full_endpoint(
             "/extapi/v2/transport/?number={}'")
-        self.login, self.password = self.get_auth_info_from_db()
         self.asu_polygon_name = None
-        self.set_headers(self.get_headers())
 
     def send_unsend_acts(self):
         data = self.get_unsend_acts()
@@ -115,11 +108,13 @@ class ASUActsWorker(mixins.AsuMixin,
             photo_in = self.get_photo_data(photo_in)
             self.upload_photo(photo_in,
                               self.get_full_endpoint(
-                                  "/extapi/v2/landfill-fact/{}/photos-arrival/".format(asu_act_id)))
+                                  "/extapi/v2/landfill-fact/{}/photos-arrival/".format(
+                                      asu_act_id)))
             photo_out = self.get_photo_data(photo_out)
             self.upload_photo(photo_out,
                               self.get_full_endpoint(
-                                  "/extapi/v2/landfill-fact/{}/photos-departure/".format(asu_act_id)
+                                  "/extapi/v2/landfill-fact/{}/photos-departure/".format(
+                                      asu_act_id)
                               ))
 
     def upload_photo(self, photoobj, endpoint):
@@ -128,19 +123,32 @@ class ASUActsWorker(mixins.AsuMixin,
         response = requests.post(endpoint, data=data, headers=self.headers)
         return response
 
+    def send_auth_data(self, endpoint, auth_data, *args, **kwargs):
+        auth_data_json = json.dumps(auth_data)
+        return requests.post(endpoint, data=auth_data_json,
+                             headers={"Content-Type": "application/json"},
+                             *args, **kwargs)
+
     def set_headers(self, headers):
+        print("Setting headers")
         headers.update({"Content-Type": "application/json"})
         self.headers = headers
 
     def get_ex_sys_id_from_response(self, response):
         return response.json()['id']
 
+    def extract_token(self, auth_response):
+        token = super().extract_token(auth_response)
+        return f"Token {token}"
+
     def fetch_asu_auto_id(self, car_number):
+        print("fetching with headers", self.headers)
         response = self.get_data(headers=self.headers,
                                  link=self.fetch_asu_auto_id_url.format(
                                      car_number
                                  ),
                                  data=None)
+        print('result', response.json())
         try:
             car_id = response.json()['results'][0]['id']
         except IndexError:
@@ -167,7 +175,6 @@ class ASUActsWorker(mixins.AsuMixin,
             'comment': ''
             # "comment": f"{act['gross_comm']}|{act['tare_comm']}|{act['add_comm']}".replace("None",""),
         }
-        print(data)
         act_json = json.dumps(data)
         return act_json
 
@@ -189,14 +196,11 @@ class ASUActsWorker(mixins.AsuMixin,
 
 
 class SignallActWorker(mixins.SignallMixin, ActsWorker,
-                       mixins.SignAllAuthMe, mixins.SignallPhotoEncoderMixin,
-                       mixins.SignallDbAuthInfoGetter):
+                       mixins.SignallPhotoEncoderMixin):
     def __init__(self, sql_shell, trash_cats_list, time_start):
         super().__init__(sql_shell=sql_shell, trash_cats=trash_cats_list,
                          time_start=time_start)
-        self.login, self.password = self.get_auth_info_from_db()
         self.working_link = self.get_full_endpoint(self.link_create_act)
-        self.login, self.password = self.get_auth_info_from_db()
         self.act_id_from_response = 'act_id'
 
     def format_send_data(self, act, photo_in=None, photo_out=None):
@@ -231,139 +235,9 @@ class SignallActWorker(mixins.SignallMixin, ActsWorker,
         return act_json
 
 
-class SignallActChecker(mixins.SignallMixin, ActsWorker,
-                        mixins.SignAllAuthMe, mixins.ActsSQLCommands,
-                        mixins.SignallActsGetter,
-                        mixins.SignallDbAuthInfoGetter):
-    def __init__(self, sql_shell, login, password, **kwargs):
-        self.sql_shell = sql_shell
-        self.login = login
-        self.password = password
-        self.working_link = self.get_full_endpoint(self.get_acts_url)
-        self.tc_column_name = 'name'
-
-    def work(self, start_date: str, end_date: str,
-             polygon_name: str, page: int = 1):
-        headers = self.get_headers()
-        signal_acts = []
-        data_frmt = self.get_acts_command(start_date, end_date, polygon_name,
-                                          page)
-        data_frmt = json.dumps(data_frmt)
-        print(data_frmt)
-        print("GETTING ACTS FROM", self.working_link)
-        act_send_response = self.post_data(headers=headers,
-                                           link=self.working_link,
-                                           data=data_frmt)
-        print('HEADERS:', headers,
-              'URL:', self.working_link,
-              'DATA:', data_frmt)
-        act_send_response = act_send_response.json()
-        signal_acts += act_send_response['acts']
-        pages = act_send_response['pages']
-        signal_acts_amount_weight = act_send_response['weight']
-        wdb_acts_info = self.get_wdb_tonnage(
-            " time_in > '{}' and time_in::date <= '{}' and tc.{}='ТКО' ".format(
-                start_date, end_date, self.tc_column_name))
-        print(wdb_acts_info)
-        print('\nОбщее количестов актов с Signall:', signal_acts_amount_weight)
-        print("Общее количество актов с WDB:",
-              wdb_acts_info['info'][0]['count'])
-        print('Общий тоннаж акттов с SignAll:', act_send_response['tonnage'])
-        print("Тоннаж с WDB:", wdb_acts_info['info'][0]['sum'], '\n')
-        count = 2
-        while count <= pages:
-            print(f'Собираем список {count} из {pages}')
-            data_frmt = self.get_acts_command(start_date, end_date,
-                                              polygon_name,
-                                              count)
-            data_frmt = json.dumps(data_frmt)
-            act_send_response = self.post_data(headers=headers,
-                                               link=self.working_link,
-                                               data=data_frmt)
-            act_send_response = act_send_response.json()
-            signal_acts += act_send_response['acts']
-            count += 1
-        print('Списки собраны')
-        print(len(signal_acts))
-        if 'error' in act_send_response:
-            print("FAILED:", act_send_response)
-            return
-        my_acts = self.get_acts_period(start_date, end_date,
-                                       " and tc.{}='ТКО' and time_out is not null".format(
-                                           self.tc_column_name))
-        if my_acts['status'] == 'success':
-            my_acts_ids = [int(act['ex_id']) for act in my_acts['info']]
-            my_acts_ids.sort()
-            my_acts_weight = {int(act['ex_id']): int(act['cargo']) for act in
-                              my_acts['info']}
-            signal_act_id = [int(act['number']) for act in signal_acts]
-            signal_act_id.sort()
-            signal_acts_weight = {int(act['number']): int(act['netto']) for act
-                                  in signal_acts}
-            print("MY ACTS", len(my_acts_ids))
-            print('Signall_act_id', len(signal_act_id))
-            print("Есть на WBD но нет на Сигнале",
-                  list(set(my_acts_ids) - set(signal_act_id)))
-            print("Есть на Сигнале но нет на wdb",
-                  list(set(signal_act_id) - set(my_acts_ids)))
-            print('Дубли на Сигнале:', set([x for x in signal_act_id if
-                                            signal_act_id.count(x) > 1]))
-            print('Дубли на WDB:',
-                  set([x for x in my_acts_ids if my_acts_ids.count(x) > 1]))
-            anomalys = {}
-            for number, weight in my_acts_weight.items():
-                try:
-                    if not signal_acts_weight[number] == weight:
-                        anomalys[number] = {}
-                        anomalys[number]['signall_weight'] = \
-                            signal_acts_weight[number]
-                        anomalys[number]['wdb_weight'] = weight
-                except KeyError:
-                    anomalys[number] = 'На SignAll нет акта'
-            print('Аномалии по весам', anomalys)
-            return {'wdb_acts_amount': len(my_acts_ids),
-                    'signall_acts_amount': len(signal_act_id),
-                    'no_signall_but_wdb': list(
-                        set(my_acts_ids) - set(signal_act_id)),
-                    'no_wdb_but_signall': list(
-                        set(signal_act_id) - set(my_acts_ids)),
-                    'signall_doubles': set([x for x in signal_act_id if
-                                            signal_act_id.count(x) > 1]),
-                    'wdb_doubles': set(
-                        [x for x in my_acts_ids if my_acts_ids.count(x) > 1]),
-                    'anomalys': anomalys,
-                    }
-
-
-class SignallActCheckerOldWDB(SignallActChecker):
-    def __init__(self, sql_shell, login, password):
-        super().__init__(sql_shell, login, password)
-        self.tc_column_name = 'cat_name'
-
-    def get_acts_all_command(self):
-        command = "SELECT r.id as ex_id, a.car_number, r.brutto as gross, " \
-                  "r.tara as tare, r.cargo, r.time_in, r.time_out, " \
-                  "clients.inn as carrier, tc.cat_name as trash_cat, " \
-                  "tt.name as trash_type, oc.gross as gross_comm," \
-                  "oc.tare as tare_comm, oc.additional as add_comm, " \
-                  "oc.changing as changing_comm, oc.closing as closing_comm," \
-                  "dro.owner as polygon_id " \
-                  "FROM records r " \
-                  "INNER JOIN clients ON (r.carrier=clients.id) " \
-                  "INNER JOIN trash_cats tc ON (r.trash_cat=tc.id) " \
-                  "INNER JOIN trash_types tt ON (r.trash_type=tt.id) " \
-                  "LEFT JOIN operator_comments oc ON (r.id=oc.record_id) " \
-                  "LEFT JOIN auto a ON (a.id=r.auto) " \
-                  "LEFT JOIN duo_records_owning dro on r.id = dro.record " \
-                  "WHERE not time_out is null "
-        return command
-
-
 class SignallActReuploder(mixins.SignallMixin, DataWorker,
-                          mixins.SignAllAuthMe,
                           mixins.SignallActDeletter,
-                          mixins.SignallActDBDeletter,
-                          mixins.SignallDbAuthInfoGetter):
+                          mixins.SignallActDBDeletter):
     def __init__(self, sql_shell, **kwargs):
         self.sql_shell = sql_shell
         self.login, self.password = self.get_auth_info_from_db()

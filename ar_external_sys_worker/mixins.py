@@ -33,6 +33,12 @@ class SignallMixin:
     port = "8080"
     link_create_act = '/v1/acts/create_act'
     ex_sys_id = 1
+    auth_key_in_headers = 'Authorization'
+    response_token_key = 'token'
+    login_key_to_ex_sys = 'email'
+    pass_key_to_ex_sys = 'password'
+    login_column_name = 'signall_login'
+    pass_column_name = 'signall_pass'
 
 
 class AsuMixin:
@@ -41,6 +47,13 @@ class AsuMixin:
     port = 80
     link_create_act = '/extapi/v2/landfill-fact/'
     ex_sys_id = 4
+    auth_key_in_headers = 'Authorization'
+    response_token_key = 'token'
+    login_key_to_ex_sys = 'username'
+    pass_key_to_ex_sys = 'password'
+    login_column_name = 'asu_api_login'
+    pass_column_name = 'asu_api_pass'
+
 
 
 class ActWorkerMixin():
@@ -81,11 +94,13 @@ class AuthMe(UrlsWorkerMixin):
         auth_data = self.get_auth_data()
         endpoint = self.get_full_endpoint(self.link_auth)
         response = self.send_auth_data(endpoint, auth_data)
+        print(response.json())
         return response
 
-    def send_auth_data(self, endpoint, auth_data):
+    def send_auth_data(self, endpoint, auth_data, *args, **kwargs):
         auth_data_json = json.dumps(auth_data)
-        return requests.post(endpoint, data=auth_data_json)
+        print(f"AUTH ON {endpoint} with {auth_data}")
+        return requests.post(endpoint, data=auth_data_json, *args, **kwargs)
 
     def get_auth_data(self):
         data = {self.login_key_to_ex_sys: self.login,
@@ -93,7 +108,8 @@ class AuthMe(UrlsWorkerMixin):
         return data
 
     def extract_token(self, auth_result_json):
-        token = auth_result_json.json()[self.response_token_key]
+        response = auth_result_json.json()
+        token = response[self.response_token_key]
         return token
 
     def get_token(self):
@@ -138,27 +154,6 @@ class SignallActDBDeletter:
         command = command.format(act_id)
         print(command)
         return self.sql_shell.try_execute(command)
-
-
-class SignAllAuthMe(AuthMe):
-    auth_key_in_headers = 'Authorization'
-    response_token_key = 'token'
-    login_key_to_ex_sys = 'login'
-    pass_key_to_ex_sys = 'password'
-
-
-class ASUAuthMe(AuthMe):
-    auth_key_in_headers = 'Authorization'
-    response_token_key = 'token'
-    login_key_to_ex_sys = 'username'
-    pass_key_to_ex_sys = 'password'
-
-    def get_token(self):
-        token = super().get_token()
-        return f"Token {token}"
-
-    def send_auth_data(self, endpoint, auth_data):
-        return requests.post(endpoint, json=auth_data)
 
 
 class ActToJSONMixin:
@@ -251,7 +246,7 @@ class ActsSQLCommands:
         self.limit = limit
 
     def get_acts_all_command(self):
-        command = "SELECT r.id as ex_id, a.car_number, r.brutto as gross, " \
+        command = "SELECT distinct on (r.id) r.id as ex_id, a.car_number, r.brutto as gross, " \
                   "r.tara as tare, r.cargo, r.time_in, r.time_out, " \
                   "cji.inn as carrier, tc.name as trash_cat, " \
                   "tt.name as trash_type, oc.gross as gross_comm," \
@@ -295,11 +290,10 @@ class ActsSQLCommands:
                                                                            '')
         command = self.get_acts_all_command() + \
                   "  and r.id NOT IN (SELECT local_id FROM " \
-                  "ex_sys_data_send_reports WHERE table_id={} and esdsr.ex_sys_id = {} and not get is null) " \
+                  "ex_sys_data_send_reports WHERE table_id={} and ex_sys_id = {} and not get is null) " \
                   "and tc.name in {} and time_in::date>'{}' LIMIT {} ".format(
                       self.table_id, self.ex_sys_id, self.trash_cats_to_send,
                       self.time_start, self.limit)
-        print(command)
         return self.sql_shell.get_table_dict(command)
 
     def get_one_unsend_act(self):
@@ -362,6 +356,7 @@ class DbAuthInfoGetter:
     def get_pass_from_db(self):
         command = "SELECT value FROM core_settings " \
                   f"where key='{self.pass_column_name}'"
+        print(command)
         return self.sql_shell.try_execute_get(command)
 
     @wsqluse.wsqluse.tryExecuteGetStripper
@@ -372,13 +367,3 @@ class DbAuthInfoGetter:
 
     def get_auth_info_from_db(self):
         return self.get_login_from_db(), self.get_pass_from_db()
-
-
-class ASUDBAPIAuthInfoGetter(DbAuthInfoGetter):
-    login_column_name = 'asu_api_login'
-    pass_column_name = 'asu_api_pass'
-
-
-class SignallDbAuthInfoGetter(DbAuthInfoGetter):
-    login_column_name = 'signall_login'
-    pass_column_name = 'signall_pass'
