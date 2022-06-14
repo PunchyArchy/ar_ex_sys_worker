@@ -55,7 +55,6 @@ class AsuMixin:
     pass_column_name = 'asu_api_pass'
 
 
-
 class ActWorkerMixin():
     table_name = 'records'
 
@@ -94,12 +93,10 @@ class AuthMe(UrlsWorkerMixin):
         auth_data = self.get_auth_data()
         endpoint = self.get_full_endpoint(self.link_auth)
         response = self.send_auth_data(endpoint, auth_data)
-        print(response.json())
         return response
 
     def send_auth_data(self, endpoint, auth_data, *args, **kwargs):
         auth_data_json = json.dumps(auth_data)
-        print(f"AUTH ON {endpoint} with {auth_data}")
         return requests.post(endpoint, data=auth_data_json, *args, **kwargs)
 
     def get_auth_data(self):
@@ -152,7 +149,6 @@ class SignallActDBDeletter:
     def delete_act_from_send_reports(self, act_id):
         command = "DELETE FROM ex_sys_data_send_reports WHERE local_id={}"
         command = command.format(act_id)
-        print(command)
         return self.sql_shell.try_execute(command)
 
 
@@ -266,6 +262,26 @@ class ActsSQLCommands:
                   "WHERE not time_out is null "
         return command
 
+    def get_alerts(self, record_id):
+        alerts = [
+            self.check_manual_pass(record_id)
+        ]
+        return alerts
+
+    def check_manual_pass(self, record_id):
+        command = "SELECT r.id, a.car_number, a.identifier, mps.manual_pass " \
+                  "FROM manual_pass_control mps " \
+                  "LEFT JOIN records r ON (mps.record_id=r.id) " \
+                  f"LEFT JOIN auto a ON (r.auto=a.id) WHERE r.id={record_id}"
+        res = self.sql_shell.try_execute_get(command)
+        if not res:
+            return
+        res = res[0]
+        identifier = res[2]
+        manual_pass = res[3]
+        if identifier and manual_pass:
+            return 'Пропуск авто с меткой вручную'
+
     def get_acts_today_command(self):
         today = datetime.datetime.today()
         return self.get_acts_all_command() + " and time_in::date='{}'".format(
@@ -336,7 +352,6 @@ class AuthWorker(DataBaseWorker, AuthMe, ExSys):
         command = "SELECT login, password FROM external_systems_auth_info " \
                   "WHERE external_system_id={} and polygon_id={}"
         command = command.format(self.ex_sys_id, self.polygon_id)
-        print(command)
         response = self.sql_shell.get_table_dict(command)
         return response
 
@@ -356,7 +371,6 @@ class DbAuthInfoGetter:
     def get_pass_from_db(self):
         command = "SELECT value FROM core_settings " \
                   f"where key='{self.pass_column_name}'"
-        print(command)
         return self.sql_shell.try_execute_get(command)
 
     @wsqluse.wsqluse.tryExecuteGetStripper

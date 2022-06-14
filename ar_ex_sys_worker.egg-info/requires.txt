@@ -1,2 +1,4 @@
 requests
 wsqluse==1.85
+pytz
+tzlocal

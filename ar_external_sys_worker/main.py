@@ -33,12 +33,14 @@ class DataWorker(mixins.Logger, mixins.ExSys, mixins.AuthMe,
 
     def send_data(self, data):
         local_data_id = self.get_local_id(data)
+        print(f"\nSENDING: id #{local_data_id}")
         data_frmt = self.format_send_data(data)
         log_id = self.log_ex_sys_sent(local_data_id)
         act_send_response = self.post_data(headers=self.headers,
                                            link=self.working_link,
                                            data=data_frmt)
         ex_sys_data_id = self.get_ex_sys_id_from_response(act_send_response)
+        print(f"\nSEND RESULT: ex_id #{ex_sys_data_id}")
         self.log_ex_sys_get(ex_sys_data_id, log_id)
         return act_send_response
 
@@ -52,8 +54,9 @@ class ActsWorker(DataWorker, mixins.ActWorkerMixin, mixins.ActsSQLCommands):
     act_id_from_response = None
 
     def __init__(self, sql_shell, trash_cats=None, time_start=None,
-                 *args, **kwargs):
+                 acts_limit=4, *args, **kwargs):
         self.sql_shell = sql_shell
+        self.limit = acts_limit
         if trash_cats is None:
             trash_cats = ['ТКО', 'ПО']
         self.trash_cats_to_send = trash_cats
@@ -88,9 +91,9 @@ class ActsWorker(DataWorker, mixins.ActWorkerMixin, mixins.ActsSQLCommands):
 
 class ASUActsWorker(mixins.AsuMixin, ActsWorker,
                     mixins.SignallPhotoEncoderMixin):
-    def __init__(self, sql_shell, trash_cats_list, time_start):
+    def __init__(self, sql_shell, trash_cats_list, time_start, acts_limit=3):
         super().__init__(sql_shell=sql_shell, trash_cats=trash_cats_list,
-                         time_start=time_start)
+                         time_start=time_start, acts_limit=acts_limit)
         self.working_link = self.get_full_endpoint(self.link_create_act)
         self.fetch_asu_auto_id_url = self.get_full_endpoint(
             "/extapi/v2/transport/?number={}'")
@@ -130,7 +133,6 @@ class ASUActsWorker(mixins.AsuMixin, ActsWorker,
                              *args, **kwargs)
 
     def set_headers(self, headers):
-        print("Setting headers")
         headers.update({"Content-Type": "application/json"})
         self.headers = headers
 
@@ -142,18 +144,15 @@ class ASUActsWorker(mixins.AsuMixin, ActsWorker,
         return f"Token {token}"
 
     def fetch_asu_auto_id(self, car_number):
-        print("fetching with headers", self.headers)
         response = self.get_data(headers=self.headers,
                                  link=self.fetch_asu_auto_id_url.format(
                                      car_number
                                  ),
                                  data=None)
-        print('result', response.json())
         try:
             car_id = response.json()['results'][0]['id']
         except IndexError:
             car_id = random.randrange(176, 189)
-            print('No ID for car {}'.format(car_number))
         return car_id
 
     def format_send_data(self, act, photo_in=None, photo_out=None):
@@ -197,15 +196,16 @@ class ASUActsWorker(mixins.AsuMixin, ActsWorker,
 
 class SignallActWorker(mixins.SignallMixin, ActsWorker,
                        mixins.SignallPhotoEncoderMixin):
-    def __init__(self, sql_shell, trash_cats_list, time_start):
+    def __init__(self, sql_shell, trash_cats_list, time_start, acts_limit=5):
         super().__init__(sql_shell=sql_shell, trash_cats=trash_cats_list,
-                         time_start=time_start)
+                         time_start=time_start, acts_limit=acts_limit)
         self.working_link = self.get_full_endpoint(self.link_create_act)
         self.act_id_from_response = 'act_id'
 
     def format_send_data(self, act, photo_in=None, photo_out=None):
         act.pop('polygon_id')
         act.pop('rfid')
+        alerts = self.get_alerts(act['ex_id'])
         act['operator_comments'] = {'gross_comm': act.pop('gross_comm'),
                                     'tare_comm': act.pop('tare_comm'),
                                     'add_comm': act.pop('add_comm'),
@@ -226,7 +226,7 @@ class SignallActWorker(mixins.SignallMixin, ActsWorker,
                                      '%Y-%m-%d %H:%M:%S'),
                                  time_out=act['time_out'].strftime(
                                      '%Y-%m-%d %H:%M:%S'),
-                                 alerts=None, carrier=act['carrier'],
+                                 alerts=alerts, carrier=act['carrier'],
                                  trash_cat=act['trash_cat'],
                                  trash_type=act['trash_type'],
                                  operator_comments=act['operator_comments'],
