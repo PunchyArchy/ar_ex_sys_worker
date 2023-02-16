@@ -16,6 +16,8 @@ class UrlsWorkerMixin:
             host = self.link_host
         if not port:
             port = self.port
+        if not port:
+            return "".join((str(host), str(link)))
         return "".join((str(host), ':' + str(port), str(link)))
 
 
@@ -28,9 +30,10 @@ class ExSys:
 
 
 class SignallMixin:
-    link_host = "http://83.136.233.111"
+    link_host = "https://signall.qodex.tech"
+    # link_host = 'https://signalltestdev.qodex.tech'
     link_auth = '/v1/user/login'
-    port = "8080"
+    port = None
     link_create_act = '/v1/acts/create_act'
     ex_sys_id = 1
     auth_key_in_headers = 'Authorization'
@@ -42,9 +45,9 @@ class SignallMixin:
 
 
 class AsuMixin:
-    link_host = 'http://bashkortostan.asu.big3.ru'
+    link_host = 'https://bashkortostan.asu.big3.ru'
     link_auth = '/extapi/v2/token-auth/'
-    port = 80
+    port = 443
     link_create_act = '/extapi/v2/landfill-fact/'
     ex_sys_id = 4
     auth_key_in_headers = 'Authorization'
@@ -62,7 +65,8 @@ class ActWorkerMixin():
                  cargo: int, time_in: str, time_out: str, alerts: list,
                  carrier: str, trash_cat: str, trash_type: str,
                  operator_comments: dict, photo_in: str,
-                 photo_out: str):
+                 photo_out: str, containers_plan, containers_fact, route_num,
+                 platform_type):
         data = locals()
         data.__delitem__('self')
         json_data = json.dumps(data)
@@ -96,8 +100,10 @@ class AuthMe(UrlsWorkerMixin):
         return response
 
     def send_auth_data(self, endpoint, auth_data, *args, **kwargs):
+        print(auth_data)
         auth_data_json = json.dumps(auth_data)
-        return requests.post(endpoint, data=auth_data_json, *args, **kwargs)
+        return requests.post(endpoint, data=auth_data_json,
+                             *args, **kwargs)
 
     def get_auth_data(self):
         data = {self.login_key_to_ex_sys: self.login,
@@ -106,6 +112,8 @@ class AuthMe(UrlsWorkerMixin):
 
     def extract_token(self, auth_result_json):
         response = auth_result_json.json()
+        # if 'error' in response:
+        #    return response
         token = response[self.response_token_key]
         return token
 
@@ -134,7 +142,7 @@ class SignallActsGetter:
 
 
 class SignallActDeletter:
-    del_act_url = '/v1/acts/delete_act_by_number/{}'
+    del_act_url = '/v1/acts/delete_act_by_id/{}'
     headers = None
     working_link = None
 
@@ -142,14 +150,77 @@ class SignallActDeletter:
         return requests.delete(self.working_link.format(act_number),
                                headers=self.headers)
 
+    def delete_act_by_id(self, id_):
+        return requests.delete(
+            self.working_link.format(id_),
+            headers=self.headers)
+
+
+class SignallActUpdater:
+    headers = None
+    working_link = None
+
+    def update_act(self, signall_id, car_number, transporter_inn, trash_cat,
+                   trash_type, comment):
+        data_json = {
+            'carrier': transporter_inn,
+            'comment': comment,
+            'trash_cat': trash_cat,
+            'trash_type': trash_type,
+            'car_number': car_number}
+        data_json = json.dumps(data_json)
+        response = requests.post(self.working_link.format(signall_id),
+                                 headers=self.headers,
+                                 data=data_json)
+        return response
+
+
+class SignAllCarsGetter:
+    headers = None
+    working_link = None
+
+    def get_cars(self):
+        response = requests.get(self.working_link,
+                                headers=self.headers)
+        return response.json()
+
+
+class ExSysActIdExtractor:
+    sql_shell = None
+    ex_sys_id = None
+
+    @wsqluse.wsqluse.tryExecuteGetStripper
+    def extract_act_ex_id(self, local_id):
+        command = "SELECT ex_sys_data_id FROM ex_sys_data_send_reports " \
+                  f"WHERE local_id={local_id} and ex_sys_id={self.ex_sys_id} " \
+                  f"order by id desc limit 1"
+        return self.sql_shell.try_execute_get(command)
+
 
 class SignallActDBDeletter:
     sql_shell = None
 
     def delete_act_from_send_reports(self, act_id):
-        command = "DELETE FROM ex_sys_data_send_reports WHERE local_id={}"
+        command = "DELETE FROM ex_sys_data_send_reports esdsr " \
+                  "WHERE esdsr.local_id={} " \
+                  "and esdsr.ex_sys_id=(SELECT id FROM external_systems where name='SignAll')"
         command = command.format(act_id)
         return self.sql_shell.try_execute(command)
+
+    def delete_act_from_send_reports_sig_id(self, sig_act_id):
+        command = "DELETE FROM ex_sys_data_send_reports esdsr " \
+                  "WHERE esdsr.ex_sys_data_id='{}' " \
+                  "and esdsr.ex_sys_id=(SELECT id FROM external_systems where name='SignAll')"
+        command = command.format(sig_act_id)
+        return self.sql_shell.try_execute(command)
+
+    @wsqluse.wsqluse.tryExecuteGetStripper
+    def select_signall_id_from_send_reports(self, local_id):
+        command = "SELECT ex_sys_data_id FROM ex_sys_data_send_reports esdrs " \
+                  "LEFT JOIN external_systems es ON (esdrs.ex_sys_id=es.id) " \
+                  f"WHERE esdrs.local_id={local_id} and es.name='SignAll'"
+        print(command)
+        return self.sql_shell.try_execute_get(command)
 
 
 class ActToJSONMixin:
@@ -224,6 +295,17 @@ class Logger(ExSys):
                   "WHERE id={}".format(get_time, ex_system_data_id, log_id)
         return self.sql_shell.try_execute(command)
 
+    def format_file_before_logging(self, data):
+        return str(data)
+
+    def log_ex_sys_data(self, data, log_id=None):
+        if not log_id:
+            log_id = self.log_id
+        data = self.format_file_before_logging(data)
+        command = "UPDATE ex_sys_data_send_reports SET data='{}' " \
+                  "WHERE id={}".format(data, log_id)
+        return self.sql_shell.try_execute(command)
+
 
 class ActsSQLCommands:
     filters = []
@@ -248,7 +330,9 @@ class ActsSQLCommands:
                   "tt.name as trash_type, oc.gross as gross_comm," \
                   "oc.tare as tare_comm, oc.additional as add_comm, " \
                   "oc.changing as changing_comm, oc.closing as closing_comm," \
-                  "dro.owner as polygon_id, ai.number as rfid " \
+                  "dro.owner as polygon_id, ai.number as rfid, rri.route_num," \
+                  "rri.containers_plan, rri.containers_fact, ra.alerts," \
+                  "pol_objects.name as pol_object " \
                   "FROM records r " \
                   "INNER JOIN clients ON (r.carrier=clients.id) " \
                   "INNER JOIN trash_cats tc ON (r.trash_cat=tc.id) " \
@@ -259,6 +343,10 @@ class ActsSQLCommands:
                   "LEFT JOIN ex_sys_data_send_reports esdsr ON (esdsr.local_id = r.id)" \
                   "LEFT JOIN duo_records_owning dro on r.id = dro.record " \
                   "LEFT JOIN auto_idents ai ON ai.id=a.identifier " \
+                  "LEFT JOIN records_routes_info rri ON r.id=rri.record_id " \
+                  "LEFT JOIN records_alerts ra ON ra.record_id=r.id " \
+                  "LEFT JOIN records_pol_objects_mapping rpom ON rpom.record_id=r.id " \
+                  "LEFT JOIN pol_objects ON rpom.object_id=pol_objects.id " \
                   "WHERE not time_out is null "
         return command
 
@@ -294,16 +382,12 @@ class ActsSQLCommands:
         return self.sql_shell.get_table_dict(command)
 
     def get_acts_period(self, start_date, end_date, smth_else):
-        command = self.get_acts_all_command() + " and time_in > '{}' and time_out::date <= '{}' {}".format(
+        command = self.get_acts_all_command() + " and time_in >= '{}' and time_out::date <= '{}' {}".format(
             start_date, end_date, smth_else)
         return self.sql_shell.get_table_dict(command)
 
     @wsqluse.wsqluse.getTableDictStripper
     def get_unsend_acts(self):
-        self.trash_cats_to_send = tuple(self.trash_cats_to_send)
-        if len(self.trash_cats_to_send) == 1:
-            self.trash_cats_to_send = str(self.trash_cats_to_send).replace(',',
-                                                                           '')
         command = self.get_acts_all_command() + \
                   "  and r.id NOT IN (SELECT local_id FROM " \
                   "ex_sys_data_send_reports WHERE table_id={} and ex_sys_id = {} and not get is null) " \

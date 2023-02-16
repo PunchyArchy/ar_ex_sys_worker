@@ -16,6 +16,20 @@ class TestCase(unittest.TestCase):
         res = inst.get_alerts(1)
         print(res)
 
+    def test_get_ex_sys_id(self):
+        class TestGetExSys(mixins.ExSysActIdExtractor):
+            sql_shell = self.sql_shell
+            ex_sys_id = 1
+        inst = TestGetExSys()
+        response = inst.extract_act_ex_id(1)
+        print('RES', response)
+
+    def test_get_signall_id(self):
+        inst = mixins.SignallActDBDeletter()
+        inst.sql_shell = self.sql_shell
+        res = inst.select_signall_id_from_send_reports(14)
+        print(res)
+        inst.delete_act_from_send_reports(14)
 
 if __name__ == "__main__":
     unittest.main()

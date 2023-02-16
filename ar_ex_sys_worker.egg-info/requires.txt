@@ -1,4 +1,4 @@
 requests
-wsqluse==1.85
+wsqluse>=1.85
 pytz
 tzlocal
